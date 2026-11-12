@@ -1,0 +1,5 @@
+confluent-kafka==2.16.1
+dnspython==2.9.2
+pymongo==4.19.0
+pyspark==3.4.1
+python-dotenv==1.2.4
