@@ -175,3 +175,60 @@ remote SHA-256 checks matched every local file, and a rerun uploaded none of tho
 files again. Browse **Catalog → workspace → uc1_spy_bars → Volumes →
 spy_bars_landing**. The SDK emitted an endpoint-discovery 403 warning and fell
 back to default endpoints; actual uploads and content verification succeeded.
+
+## Step 4: Auto Loader to bronze
+
+Run from the repository on your Mac:
+
+```sh
+.venv/bin/python run_bronze.py
+```
+
+The SDK uses your existing `.env` login, uploads
+`databricks/bronze_spy_bars.py` to `/Shared/uc1_spy_bars/bronze_spy_bars`, and
+submits a one-time serverless notebook job. It reports the run ID and waits for
+success or failure. No local Spark execution or Scala is used. Do not run jobs
+concurrently against the same checkpoint. Interrupting the local runner does not
+cancel the remote job; inspect its status in Jobs & Pipelines before rerunning.
+
+Input: `/Volumes/workspace/uc1_spy_bars/spy_bars_landing`.
+Target: `workspace.uc1_spy_bars.bronze_spy_bars_1m`.
+Checkpoint: `/Volumes/workspace/uc1_spy_bars/spy_bars_checkpoints/bronze_spy_bars_1m`.
+The runner creates the separate checkpoint Volume if absent. Keep this checkpoint
+and the table together; deleting the checkpoint can reingest old files. Never
+place checkpoint state in the source landing directory.
+
+The source schema explicitly declares symbol, tradeDate and _id as strings, ts
+as a timestamp, OHLC prices as doubles, and volume as a long. Audit columns are
+`source_file_name` and `ingestion_timestamp`. Invalid typed input fails the run.
+Bronze appends every input record, including duplicates already present across
+landed files; there is no business-key deduplication or merge.
+
+An actual `CREATE TABLE ... USING ICEBERG` test succeeded in this Free Edition
+workspace; its empty test table was removed. Bronze uses managed Iceberg, with
+no Delta fallback. The notebook uses the recommended `availableNow` trigger,
+which ingests available files then exits. Rerun the job after further uploads.
+Serverless also supports deprecated `once`, but does not support processing-time
+or continuous triggers for notebook jobs.
+
+Verify in the SQL Editor:
+
+```sql
+SELECT COUNT(*) AS row_count, MIN(ts) AS first_ts, MAX(ts) AS last_ts
+FROM workspace.uc1_spy_bars.bronze_spy_bars_1m;
+```
+
+Reference: https://docs.databricks.com/aws/en/compute/serverless/limitations
+
+Live validation confirmed `DESCRIBE DETAIL` reports `iceberg`. The initial run
+loaded 343 rows; a second run reached 367 rows as additional files arrived. Each
+ingested source file's bronze count matched its landed line count, proving the
+checkpoint did not duplicate previous files. All audit values were populated.
+Use `DESCRIBE DETAIL` for format verification: this workspace's catalog SDK reports
+an underlying DELTA format even though SQL correctly identifies managed Iceberg.
+
+The final verified run (including the format guard) completed successfully with
+379 rows, first ts `2026-09-04 13:30:00 UTC`, and last ts
+`2026-09-04 19:48:00 UTC`. These are the expected values until another bronze job
+runs; later uploads alone do not change the table. Future job runs may increase
+the count and maximum timestamp. No schedule was created.
