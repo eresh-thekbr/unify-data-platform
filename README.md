@@ -111,3 +111,59 @@ Validation: ` .venv/bin/python -m unittest discover -s tests -v` covers size,
 timer, shutdown, failed writes, and failed commits. Live verification wrote two
 batches across a restart and compared the resulting 20 lines with Kafka offsets
 0–19. Both files and the group's committed position are retained locally.
+
+## Step 3: upload to a Unity Catalog Volume
+
+Databricks CLI and `databricks-sdk` are required. The CLI was installed with
+`brew install databricks/tap/databricks`; install Python dependencies with
+`.venv/bin/pip install -r requirements.txt`.
+
+Set `DATABRICKS_HOST` in `.env` to your workspace's HTTPS origin (no browser path).
+If your account offers it, create a personal access token under Settings →
+Developer → Access tokens, and set `DATABRICKS_TOKEN` in `.env`. Never paste
+credentials into commands, documentation, or git. Both fields are blank in
+`.env.example`. Token availability depends on workspace policy.
+
+OAuth is an alternative with `databricks auth login`: it opens a browser for
+interactive login. The CLI stores a profile and OAuth credentials outside `.env`
+in its own local configuration/cache, so choose this only if that storage is
+acceptable. The Python uploader uses CLI OAuth when `DATABRICKS_TOKEN` is empty.
+Official authentication guidance:
+https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m
+
+Inspect before choosing a catalog:
+
+```sh
+.venv/bin/python upload_bars.py --inspect
+```
+
+Use an actual writable workspace catalog from that inspection; do not use a
+sample, system, or foreign catalog. Set `DATABRICKS_CATALOG` in `.env`, then:
+
+```sh
+.venv/bin/python upload_bars.py --create-volume
+.venv/bin/python upload_bars.py --once
+.venv/bin/python upload_bars.py
+```
+
+The project schema defaults to `uc1_spy_bars`; the managed Volume is
+`spy_bars_landing`. In the Databricks UI, open **Catalog → your selected catalog →
+uc1_spy_bars → Volumes → spy_bars_landing** and browse the files.
+
+The default command polls every `UPLOAD_INTERVAL_SECONDS=30`. Ctrl+C finishes
+any current upload and records it before exiting. It reads only completed
+`*.jsonl` files from `FILE_WRITER_DIRECTORY`. Uploads use the Files API, without
+starting compute or reading MongoDB. Errors stop the uploader; rerun after fixing
+the cause. The local SQLite record at `UPLOAD_STATE_FILE` defaults to
+`.state/uploads.sqlite3`, scoped to the workspace and Volume. Existing recorded
+files are skipped. If an upload succeeded before a crash prevented recording,
+the remote contents are checked before recording it, without uploading again.
+Conflicting contents cause an error; no remote file is overwritten. Keep uploaded
+local files immutable and do not delete the Volume's files independently of the
+local record. Custom state paths must remain outside git or be added to `.gitignore`.
+
+Run the uploader twice with `--once` to verify that the second run uploads no
+files. Tests use synthetic contents and mocked SDK calls:
+`.venv/bin/python -m unittest discover -s tests -v`.
+
+Free Edition limits: https://docs.databricks.com/aws/en/getting-started/free-edition-limitations
