@@ -48,6 +48,9 @@ def load_bronze(spark: SparkSession) -> None:
             source_file_name STRING, ingestion_timestamp TIMESTAMP
         ) USING ICEBERG
     """)
+    table_details = spark.sql(f"DESCRIBE DETAIL {TABLE_NAME}").first()
+    if table_details is None or table_details["format"] != "iceberg":
+        raise ValueError("Bronze target must be a managed Iceberg table; refusing a format fallback")
     query = (read_bars(spark).writeStream
              .format("iceberg")
              .outputMode("append")
