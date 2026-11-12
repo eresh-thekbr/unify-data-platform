@@ -8,7 +8,7 @@ from pathlib import Path
 
 from databricks.sdk.errors import NotFound
 from databricks.sdk.service.catalog import VolumeType
-from databricks.sdk.service.jobs import NotebookTask, RunResultState, SubmitTask
+from databricks.sdk.service.jobs import NotebookTask, RunResultState, SubmitTask, TaskDependency
 from databricks.sdk.service.workspace import ImportFormat, Language
 from dotenv import load_dotenv
 
@@ -35,13 +35,17 @@ def main() -> None:
         client.volumes.create(catalog_name="workspace", schema_name="uc1_spy_bars",
                               name="spy_bars_checkpoints", volume_type=VolumeType.MANAGED)
     client.workspace.mkdirs(WORKSPACE_DIRECTORY)
-    notebook_source = (PROJECT_ROOT / "databricks" / "bronze_spy_bars.py").read_bytes()
-    client.workspace.import_(path=NOTEBOOK_PATH, content=base64.b64encode(notebook_source).decode(),
-                             format=ImportFormat.SOURCE, language=Language.PYTHON, overwrite=True)
-    # Omitting cluster settings selects serverless compute for this notebook task.
-    submitted = client.jobs.submit(run_name="uc1-spy-bars-bronze", tasks=[SubmitTask(
-        task_key="load_bronze", notebook_task=NotebookTask(notebook_path=NOTEBOOK_PATH),
-        timeout_seconds=JOB_TIMEOUT_SECONDS)])
+    for notebook_name in ("bronze_spy_bars", "silver_spy_bars"):
+        notebook_source = (PROJECT_ROOT / "notebooks" / f"{notebook_name}.py").read_bytes()
+        client.workspace.import_(path=f"{WORKSPACE_DIRECTORY}/{notebook_name}",
+                                 content=base64.b64encode(notebook_source).decode(),
+                                 format=ImportFormat.SOURCE, language=Language.PYTHON, overwrite=True)
+    submitted = client.jobs.submit(run_name="uc1-spy-bars-bronze-silver", tasks=[
+        SubmitTask(task_key="load_bronze", notebook_task=NotebookTask(notebook_path=NOTEBOOK_PATH),
+                   timeout_seconds=JOB_TIMEOUT_SECONDS),
+        SubmitTask(task_key="load_silver", depends_on=[TaskDependency(task_key="load_bronze")],
+                   notebook_task=NotebookTask(notebook_path=f"{WORKSPACE_DIRECTORY}/silver_spy_bars"),
+                   timeout_seconds=JOB_TIMEOUT_SECONDS)])
     run_id = submitted.run_id
     LOGGER.info("Submitted run_id=%s", run_id)
     while True:
@@ -56,8 +60,8 @@ def main() -> None:
                         if output.error:
                             LOGGER.error("Task failed: %s", output.error)
                 if run.state.result_state != RunResultState.SUCCESS:
-                    raise RuntimeError(f"Bronze job failed: {run.state.state_message}")
-                LOGGER.info("Bronze ingestion succeeded")
+                    raise RuntimeError(f"Bronze/silver job failed: {run.state.state_message}")
+                LOGGER.info("Bronze/silver job succeeded")
                 return
         time.sleep(POLL_SECONDS)
 
