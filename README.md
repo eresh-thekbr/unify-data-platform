@@ -167,3 +167,11 @@ files. Tests use synthetic contents and mocked SDK calls:
 `.venv/bin/python -m unittest discover -s tests -v`.
 
 Free Edition limits: https://docs.databricks.com/aws/en/getting-started/free-edition-limitations
+
+Workspace verification selected `workspace`, the available managed catalog;
+`system` and `samples` were system catalogs. Created
+`workspace.uc1_spy_bars.spy_bars_landing`. The initial live upload saved 33 files;
+remote SHA-256 checks matched every local file, and a rerun uploaded none of those
+files again. Browse **Catalog → workspace → uc1_spy_bars → Volumes →
+spy_bars_landing**. The SDK emitted an endpoint-discovery 403 warning and fell
+back to default endpoints; actual uploads and content verification succeeded.
