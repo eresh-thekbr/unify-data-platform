@@ -7,5 +7,7 @@ contains its own scripts, notebooks, tests, configuration template, and README.
 
 - [SPY market bars pipeline](spy_bars/README.md): replay one-minute SPY bars from
   MongoDB through Kafka into bronze, silver, and quarantine tables.
+- [CardPulse batch pipeline](cardpulse/README.md): load a daily card transactions CSV
+  into bronze, silver, rejected, gold, and audit Iceberg tables.
 
 Add future use cases as sibling directories named for their purpose.
