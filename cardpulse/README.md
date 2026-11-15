@@ -4,6 +4,10 @@ Credit card analytics on Databricks Free Edition. One daily transactions CSV mov
 through bronze, silver and gold Iceberg tables in Unity Catalog under `workspace.cardpulse`.
 Every run is recorded in `pipeline_run_audit`.
 
+How one run moves rows through the tables:
+
+![CardPulse batch flow](docs/cardpulse-batch-flow.svg)
+
 | Table | What it holds |
 |---|---|
 | `bronze_card_transactions` | CSV rows as-is (all STRING) + `source_file`, `load_ts`, `run_id` |
@@ -50,14 +54,24 @@ A row can fail several rules at once. Every failed rule is listed, separated by 
      dbfs:/Volumes/workspace/cardpulse/landing/
    ```
 
-4. **Run the notebook.** Add this repo to the workspace as a Git folder, so
-   `notebooks/` and `sql/` sit next to each other. Open `cardpulse/notebooks/run_pipeline.py`
-   on serverless compute, set the `source_file` widget to the CSV name, and click **Run all**.
+4. **Deploy and run the job** with the Databricks Asset Bundle in `databricks.yml`.
+   Run these from `cardpulse/`, with `DATABRICKS_HOST` and `DATABRICKS_TOKEN` set or a CLI profile configured:
+   ```bash
+   databricks bundle validate
+   databricks bundle deploy
+   databricks bundle run cardpulse_batch_pipeline --params source_file=card_transactions_2026-11-14.csv
+   ```
+   The deploy uploads `notebooks/` and `sql/` together and creates a serverless job.
+   In the `dev` target the job is named `[dev <you>] cardpulse-batch-pipeline`.
    The notebook creates any missing tables from `sql/*.sql`, then runs bronze, silver,
    gold and the audit write.
 
-To load a new day, upload the new CSV and run the notebook again with the new file name.
-If a file already has a `SUCCEEDED` audit row, the notebook skips it rather than load it twice.
+   Without the CLI, you can instead add this repo to the workspace as a Git folder,
+   open `cardpulse/notebooks/run_pipeline.py` on serverless compute, set the
+   `source_file` widget, and click **Run all**.
+
+To load a new day, upload the new CSV and run the job again with the new file name.
+If a file already has a `SUCCEEDED` audit row, the job skips it rather than load it twice.
 
 ## Check that bronze = silver + rejected
 
@@ -96,6 +110,18 @@ For the sample file you should see 1000 = 974 + 26. To see why rows were rejecte
 SELECT reject_reason, count(*) FROM workspace.cardpulse.silver_rejected_transactions
 GROUP BY reject_reason ORDER BY reject_reason;
 ```
+
+## Verified on Databricks Free Edition (2026-11-15)
+
+- `information_schema.tables` lists all five tables as `ICEBERG`, `MANAGED`.
+- The audit row for the sample file shows `rows_read=1000`, `rows_loaded=974`,
+  `rows_rejected=26`, `SUCCEEDED`. The direct count query also matched (`counts_match = true`).
+- Reject reasons: 10 `duplicate_transaction_id`, 8 `negative_amount`,
+  6 `missing_card_number`, 2 `invalid_transaction_ts`.
+- Gold has 8 rows, one per category, for 2026-11-14.
+- Silver and rejected contain no unmasked card numbers.
+- Running the job a second time on the same file skipped it. Bronze stayed at 1,000 rows,
+  and the audit table still had a single row.
 
 ## Limits
 

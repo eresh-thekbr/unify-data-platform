@@ -1,0 +1,30 @@
+# Databricks Asset Bundle: deploys notebooks/ and sql/ to the workspace and defines the job.
+# Deploy:  databricks bundle deploy
+# Run:     databricks bundle run cardpulse_batch_pipeline --params source_file=<csv name>
+bundle:
+  name: cardpulse
+
+sync:
+  exclude:
+    - sample_data/**
+    - generate_transactions.py
+
+resources:
+  jobs:
+    cardpulse_batch_pipeline:
+      name: cardpulse-batch-pipeline
+      max_concurrent_runs: 1
+      parameters:
+        - name: source_file
+          default: card_transactions_2026-11-14.csv
+      tasks:
+        # No cluster settings: the task runs on serverless compute.
+        - task_key: run_pipeline
+          notebook_task:
+            notebook_path: ./notebooks/run_pipeline.py
+          timeout_seconds: 1800
+
+targets:
+  dev:
+    mode: development
+    default: true
