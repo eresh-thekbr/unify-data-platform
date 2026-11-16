@@ -8,6 +8,10 @@ This use case replays SPY one-minute market bars from MongoDB through Kafka
 and JSON Lines files into Databricks bronze, silver, and quarantine tables.
 Run all commands below from this `spy_bars/` directory.
 
+How one bar travels from MongoDB to silver, and where each step saves its position:
+
+![SPY bars flow](docs/spy-bars-flow.svg)
+
 ## Start
 
 ```sh
